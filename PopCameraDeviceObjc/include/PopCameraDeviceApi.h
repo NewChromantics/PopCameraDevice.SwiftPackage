@@ -13,29 +13,36 @@
 #define DLL_EXPORT
 #endif
 
-/*
+
+@interface FrameWithData : NSObject
+
+//@property NSString* __nonnull meta;
+@property int frameNumber;
+@property NSData* plane0;
+@property NSData* plane1;
+@property NSData* plane2;
+
+@end
 
 //	gr: switched to an objective c class so we can use attributes which allow swift to auto-throw
 //		swift exceptions which can be easily caught
 //	gr: to allocate in swift, this needs to inherit from NSObject, otherwise we get an exception with no information
-@interface PopH264DecoderWrapper : NSObject
+@interface PopCameraDeviceInstanceWrapper : NSObject
 
 @property int instance;
 
 - (id)init;
-- (void)allocate:(NSError**)throwError __attribute__((swift_error(nonnull_error)));
+- (void)allocateWithSerial:(NSString*__nonnull)serial options:(NSDictionary*__nonnull)options error:(NSError**__nonnull)throwError __attribute__((swift_error(nonnull_error)));
 - (void)free;
-//- (NSString*__nonnull)getDecoderStateJson:(NSError**)throwError __attribute__((swift_error(nonnull_error)));
-- (NSString*__nonnull)peekNextFrameJson:(NSError**)throwError __attribute__((swift_error(nonnull_error)));
-- (int)popNextFrame;
-- (void)pushData:(NSData*__nonnull)data frameNumber:(int32_t)frameNumber;
-- (void)pushEndOfFile;
+
+//	null string returned means no frame pending
+- (NSString*__nullable)peekNextFrameJson:(NSError**__nonnull)throwError __attribute__((swift_error(nonnull_error)));
+- (FrameWithData*__nonnull)popNextFrame:(int)Plane0Size error:(NSError**__nonnull)throwError __attribute__((swift_error(nonnull_error)));
 
 @end
-*/
+
 
 //	some objective-c wrappers to the CAPI
-DLL_EXPORT NSString*__nonnull PopCameraDevice_GetVersion_NSString();
-//DLL_EXPORT int PopCameraDevice_AllocDecoder();
-//DLL_EXPORT void PopH264_FreeDecoder(int Instance);
-DLL_EXPORT NSString*__nonnull PopCameraDevice_EnumCameraDevicesJsonNSString();
+DLL_EXPORT NSString*__nonnull PopCameraDeviceObjc_GetVersion();
+DLL_EXPORT NSString*__nonnull PopCameraDeviceObjc_EnumCameraDevicesJson();
+DLL_EXPORT int PopCameraDeviceObjc_CreateCameraDevice(NSString* Serial,NSDictionary* Options);

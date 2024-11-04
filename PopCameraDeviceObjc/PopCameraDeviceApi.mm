@@ -1,21 +1,24 @@
 #define DLL_EXPORT extern"C"
-//#define DLL_EXPORT
-//#include "../PopH264.xcframework/macos-arm64_x86_64/PopH264_Osx.framework/Versions/A/Headers/PopH264.h"
 #include "PopCameraDevice_Osx/PopCameraDevice.h"
 
-//#include "PopMp4.h"
 #import "include/PopCameraDeviceApi.h"
 #import <Foundation/Foundation.h>
 #include <array>
 #include <iostream>
 #include <mutex>	//	scoped_lock
 
-/*
-NSString*__nonnull PopH264_PeekFrameJson(int Instance,std::vector<char>& JsonBuffer);
+
+DLL_EXPORT NSString*__nonnull PopCameraDeviceObjc_PeekNextFrame(int Instance,std::vector<char>& JsonBuffer);
+FrameWithData*__nonnull PopCameraDeviceObjc_PopFrame(int Instance,int Plane0Size);
+
+
+@implementation FrameWithData
+
+@end
 
 
 
-@implementation PopH264DecoderWrapper
+@implementation PopCameraDeviceInstanceWrapper
 {
 	int					instance;
 	std::vector<char>	jsonBuffer;		//	allocate once!
@@ -25,18 +28,18 @@ NSString*__nonnull PopH264_PeekFrameJson(int Instance,std::vector<char>& JsonBuf
 - (id)init
 {
 	self = [super init];
-	instance = PopH264_NullInstance;
+	instance = PopCameraDevice_NullInstance;
 	return self;
 }
 
-- (void)allocate:(NSError**)throwError __attribute__((swift_error(nonnull_error)))
+- (void)allocateWithSerial:(NSString*__nonnull)serial options:(NSDictionary*__nonnull)options error:(NSError**)throwError __attribute__((swift_error(nonnull_error)));
 {
 	*throwError = nil;
 	try
 	{
 		@try
 		{
-			instance = PopH264_AllocDecoder();
+			instance = PopCameraDeviceObjc_CreateCameraDevice( serial, options );
 		}
 		@catch (NSException* exception)
 		{
@@ -55,12 +58,12 @@ NSString*__nonnull PopH264_PeekFrameJson(int Instance,std::vector<char>& JsonBuf
 
 - (void)free
 {
-	PopH264_DestroyDecoder(instance);
-	//mInstance = PopMp4Decoder_NullInstance;
+	PopCameraDevice_FreeCameraDevice(instance);
+	instance = PopCameraDevice_NullInstance;
 }
 
 
-- (NSString*__nonnull)peekNextFrameJson:(NSError**)throwError __attribute__((swift_error(nonnull_error)))
+- (NSString*__nullable)peekNextFrameJson:(NSError**)throwError __attribute__((swift_error(nonnull_error)))
 {
 	*throwError = nil;
 	try
@@ -70,7 +73,7 @@ NSString*__nonnull PopH264_PeekFrameJson(int Instance,std::vector<char>& JsonBuf
 			//	gr: cant set c++20 in swiftpackage!
 			//std::scoped_lock Lock(jsonBufferLock);
 			std::lock_guard<std::mutex> lock(jsonBufferLock);
-			return PopH264_PeekFrameJson(instance, jsonBuffer);
+			return PopCameraDeviceObjc_PeekNextFrame(instance, jsonBuffer);
 		}
 		@catch (NSException* exception)
 		{
@@ -85,32 +88,68 @@ NSString*__nonnull PopH264_PeekFrameJson(int Instance,std::vector<char>& JsonBuf
 	}
 }
 
-- (int)popNextFrame
+- (FrameWithData*__nonnull)popNextFrame:(int)Plane0Size error:(NSError**__nonnull)throwError __attribute__((swift_error(nonnull_error)));
 {
-	return PopH264_PopFrame( instance, nullptr, 0, nullptr, 0, nullptr, 0 );
+	*throwError = nil;
+	try
+	{
+		@try
+		{
+			return PopCameraDeviceObjc_PopFrame( instance, Plane0Size );
+		}
+		@catch (NSException* exception)
+		{
+			//*throwError = [NSError errorWithDomain:exception.reason code:0 userInfo:nil];
+			throw std::runtime_error(exception.reason.UTF8String);
+		}
+	}
+	catch (std::exception& e)
+	{
+		NSString* error = [NSString stringWithUTF8String:e.what()];
+		*throwError = [NSError errorWithDomain:error code:0 userInfo:nil];
+	}
 }
 
-- (void)pushData:(NSData*__nonnull)data frameNumber:(int32_t)frameNumber
-{
-	//uint8_t* DataAddress = reinterpret_cast<uint8_t*>(data.bytes);
-	uint8_t* DataAddress = (uint8_t*)data.bytes;
-	PopH264_PushData( instance, DataAddress, data.length, frameNumber);
-}
-
-- (void)pushEndOfFile
-{
-	PopH264_PushEndOfStream(instance);
-}
 
 @end
 
 
+FrameWithData*__nonnull PopCameraDeviceObjc_PopFrame(int Instance,int Plane0Size)
+{
+	/*
+	 Resource.meta = @(JsonBuffer.data());
+	 if ( !Timeout )
+	 Resource.data = [NSData dataWithBytes:DataBuffer.data() length:DataSize];
+	 */
+	//	todo: pool this
+	std::vector<uint8_t> Plane0Buffer;
+	Plane0Buffer.resize(Plane0Size);
+	
+	uint8_t *Plane0 = Plane0Buffer.data();
+	//int32_t Plane0Size = 0;
+	uint8_t *Plane1 = nullptr;
+	int32_t Plane1Size = 0;
+	uint8_t *Plane2 = nullptr;
+	int32_t Plane2Size = 0;
+	
+	int FrameNumber = ::PopCameraDevice_PopNextFrame( Instance, nullptr, 0, Plane0, Plane0Size, Plane1, Plane1Size, Plane2, Plane2Size );
+	if ( FrameNumber < 0 )
+	{
+		throw std::runtime_error("PopCameraDevice_PopNextFrame failed");
+	}
+	
+	FrameWithData* Frame = [FrameWithData alloc];
+	//Resource.meta = @("{}");
+	Frame.plane0 = [NSData dataWithBytes:Plane0Buffer.data() length:Plane0Buffer.size()];
+	
+	return Frame;
+}
 
-*/
+
 //	to be visible in swift, the declaration is in header.
 //	but all headers for swift are in C (despite objc types??) and are not mangled
 //	therefore with mm (c++) the name needs unmangling
-DLL_EXPORT NSString* PopCameraDevice_GetVersion_NSString()
+DLL_EXPORT NSString* PopCameraDeviceObjc_GetVersion()
 {
 	auto VersionThousand = PopCameraDevice_GetVersionThousand();
 	//auto VersionThousand = 0;
@@ -121,7 +160,7 @@ DLL_EXPORT NSString* PopCameraDevice_GetVersion_NSString()
 }
 
 
-NSString*__nonnull PopCameraDevice_EnumCameraDevicesJsonNSString()
+NSString*__nonnull PopCameraDeviceObjc_EnumCameraDevicesJson()
 {
 	std::vector<char> JsonBuffer;
 	JsonBuffer.resize(2*1024*1024);
@@ -145,20 +184,21 @@ NSString*__nonnull PopCameraDevice_EnumCameraDevicesJsonNSString()
 }
 
 
-/*
-DLL_EXPORT int PopH264_AllocDecoder()
+
+DLL_EXPORT int PopCameraDeviceObjc_CreateCameraDevice(NSString* Serial,NSDictionary* Options=@{})
 {
 	std::vector<char> ErrorBuffer(100*1024);
-
-	//	gr: poph264 doesnt have a file loader
+/*
 	NSDictionary* Options =
 	@{
 	};
+ */
 	NSData* OptionsJsonData = [NSJSONSerialization dataWithJSONObject:Options options:NSJSONWritingPrettyPrinted error:nil];
 	NSString* OptionsJsonString = [[NSString alloc] initWithData:OptionsJsonData encoding:NSUTF8StringEncoding];
 	const char* OptionsJsonStringC = [OptionsJsonString UTF8String];
+	const char* NameStringC = [Serial UTF8String];
 
-	auto Instance = ::PopH264_CreateDecoder( OptionsJsonStringC, ErrorBuffer.data(), ErrorBuffer.size() );
+	auto Instance = ::PopCameraDevice_CreateCameraDevice(NameStringC, OptionsJsonStringC, ErrorBuffer.data(), ErrorBuffer.size() );
 
 	//auto Error = [NSString stringWithUTF8String: ErrorBuffer.data()];
 	auto Error = std::string( ErrorBuffer.data() );
@@ -168,24 +208,22 @@ DLL_EXPORT int PopH264_AllocDecoder()
 		//@throw([NSException exceptionWithName:@"Error allocating MP4 decoder" reason:Error userInfo:nil]);
 		throw std::runtime_error(Error);
 	
-	if ( Instance == PopH264_NullInstance )
+	if ( Instance == PopCameraDevice_NullInstance )
 		//@throw([NSException exceptionWithName:@"Error allocating MP4 decoder" reason:@"null returned" userInfo:nil]);
-		throw std::runtime_error("Failed to allocate PopMp4 instance");
+		throw std::runtime_error("Failed to allocate PopCameraDevice instance");
 	
 	return Instance;
 }
 
-DLL_EXPORT void PopH264_FreeDecoder(int Instance)
-{
-	::PopH264_FreeDecoder(Instance);
-}
-
-
-
-NSString*__nonnull PopH264_PeekFrameJson(int Instance,std::vector<char>& JsonBuffer)
+DLL_EXPORT NSString*__nullable PopCameraDeviceObjc_PeekNextFrame(int Instance,std::vector<char>& JsonBuffer)
 {
 	JsonBuffer.resize(2*1024*1024);
-	PopH264_PeekFrame( Instance, JsonBuffer.data(), JsonBuffer.size() );
+	int NextFrame = PopCameraDevice_PeekNextFrame( Instance, JsonBuffer.data(), JsonBuffer.size() );
+	
+	//	no frame
+	//	gr: if there's an error (bad instance) do we get -1 AND some data?
+	if ( NextFrame == -1 )
+		return nil;
 	
 	auto Length = std::strlen(JsonBuffer.data());
 	if ( Length > 512*1024 )
@@ -203,5 +241,3 @@ NSString*__nonnull PopH264_PeekFrameJson(int Instance,std::vector<char>& JsonBuf
 	//return Dictionary;
 	return Json;
 }
-
-*/
