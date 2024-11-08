@@ -224,7 +224,7 @@ public class PopCameraDeviceInstance
 		{
 			//var StateJson = try instanceWrapper.getDecoderStateJson()
 			var StateJson = try instanceWrapper.peekNextFrameJson()
-			print(StateJson)
+			//print(StateJson)
 			
 			//	null json = no frame pending
 			guard let StateJson else
