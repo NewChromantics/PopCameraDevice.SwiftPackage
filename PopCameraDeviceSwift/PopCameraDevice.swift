@@ -25,11 +25,11 @@ public func GetVersion() -> String
 
 public struct StreamImageFormat
 {
-	public var width : Int32
-	public var height : Int32
+	public var width : UInt32
+	public var height : UInt32
 	public var pixelFormat : CMPixelFormatType // kCVPixelFormatType_32BGRA
 	
-	public init(width: Int32, height: Int32, pixelFormat: CMPixelFormatType)
+	public init(width: UInt32, height: UInt32, pixelFormat: CMPixelFormatType)
 	{
 		self.width = width
 		self.height = height
@@ -44,12 +44,12 @@ public struct StreamImageFormat
 	public func GetFormatDescripton() -> CMVideoFormatDescription
 	{
 		var videoFormat : CMFormatDescription!
-		let dims = CMVideoDimensions(width: self.width, height: self.height)
+		let dims = CMVideoDimensions(width: Int32(self.width), height: Int32(self.height))
 		CMVideoFormatDescriptionCreate(
 			allocator: kCFAllocatorDefault,
 			codecType: pixelFormat,
-			width: self.width,
-			height: self.height,
+			width: dims.width,
+			height: dims.height,
 			extensions: nil,
 			formatDescriptionOut: &videoFormat
 		)
@@ -129,7 +129,7 @@ public struct PlaneMeta: Decodable
 	
 	public func GetStreamImageFormat() throws -> StreamImageFormat
 	{
-		return StreamImageFormat( width: Width, height: Height, pixelFormat: try GetPixelFormat() )
+		return StreamImageFormat( width: UInt32(Width), height: UInt32(Height), pixelFormat: try GetPixelFormat() )
 	}
 	
 	public func ConvertDepth() -> PlaneMeta
