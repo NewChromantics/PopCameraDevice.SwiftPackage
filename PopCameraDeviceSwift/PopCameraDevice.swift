@@ -222,18 +222,16 @@ public class PopCameraDeviceInstance
 		
 		do
 		{
-			//var StateJson = try instanceWrapper.getDecoderStateJson()
-			var StateJson = try instanceWrapper.peekNextFrameJson()
-			//print(StateJson)
+			var NextFrameMeta = try instanceWrapper.peekNextFrameJson()
 			
 			//	null json = no frame pending
-			guard let StateJson else
+			guard let NextFrameMeta else
 			{
 				return nil
 			}
 			
-			let StateJsonData = StateJson.data(using: .utf8)!
-			var Meta = try JSONDecoder().decode(FrameMeta.self, from: StateJsonData)
+			let NextFrameMetaJsonData = NextFrameMeta.metaJson.data(using: .utf8)!
+			var Meta = try JSONDecoder().decode(FrameMeta.self, from: NextFrameMetaJsonData)
 			
 			/*
 			//	convert depth plane
@@ -246,15 +244,19 @@ public class PopCameraDeviceInstance
 			
 			//	pop frame
 			let Plane0Size : Int32 = Int32(Meta.Planes?.first?.DataSize ?? 0 )
-			var PoppedFrame = try instanceWrapper.popNextFrame(Plane0Size)
+			var PoppedFrame = try instanceWrapper.popNextFrame(Plane0Size,expectedFrameNumber:NextFrameMeta.frameNumber)
 			
+			guard let PoppedFrame else
+			{
+				throw PopError("Wrongly got null frame back from popNextFrame when it should have thrown")
+			}
 			var frame = Frame(Meta: Meta, PixelData: PoppedFrame.plane0, FrameNumber:PoppedFrame.frameNumber)
 			
 			return frame
 		}
 		catch let error as Error
 		{
-			let OutputError = "Error getting decoder state; \(error.localizedDescription)"
+			let OutputError = "Error getting next frame state; \(error.localizedDescription)"
 			throw PopError( OutputError )
 		}
 	}

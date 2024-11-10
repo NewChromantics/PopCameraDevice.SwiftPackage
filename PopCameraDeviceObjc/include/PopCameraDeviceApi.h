@@ -14,6 +14,15 @@
 #endif
 
 
+
+@interface FrameWithMeta : NSObject
+
+@property int frameNumber;
+@property NSString* /*__nonnull */metaJson;
+//@property NSDictionary* __nonnull meta;
+
+@end
+
 @interface FrameWithData : NSObject
 
 //@property NSString* __nonnull meta;
@@ -36,8 +45,9 @@
 - (void)free;
 
 //	null string returned means no frame pending
-- (NSString*__nullable)peekNextFrameJson:(NSError**__nonnull)throwError __attribute__((swift_error(nonnull_error)));
-- (FrameWithData*__nonnull)popNextFrame:(int)Plane0Size error:(NSError**__nonnull)throwError __attribute__((swift_error(nonnull_error)));
+- (FrameWithMeta*__nullable)peekNextFrameJson:(NSError**__nonnull)throwError __attribute__((swift_error(nonnull_error)));
+//	__nonnull seems to have objc-release problems when throwing
+- (FrameWithData*__nullable)popNextFrame:(int)Plane0Size expectedFrameNumber:(int)expectedFrameNumber error:(NSError**__nonnull)throwError __attribute__((swift_error(nonnull_error)));
 
 @end
 

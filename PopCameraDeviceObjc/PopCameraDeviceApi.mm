@@ -8,9 +8,13 @@
 #include <mutex>	//	scoped_lock
 
 
-DLL_EXPORT NSString*__nonnull PopCameraDeviceObjc_PeekNextFrame(int Instance,std::vector<char>& JsonBuffer);
-FrameWithData*__nonnull PopCameraDeviceObjc_PopFrame(int Instance,int Plane0Size);
+FrameWithMeta*__nonnull PopCameraDeviceObjc_PeekNextFrame(int Instance,std::vector<char>& JsonBuffer);
+FrameWithData*__nonnull PopCameraDeviceObjc_PopFrame(int Instance,int Plane0Size,int ExpectedFrameNumber);
 
+
+@implementation FrameWithMeta
+
+@end
 
 @implementation FrameWithData
 
@@ -63,7 +67,7 @@ FrameWithData*__nonnull PopCameraDeviceObjc_PopFrame(int Instance,int Plane0Size
 }
 
 
-- (NSString*__nullable)peekNextFrameJson:(NSError**)throwError __attribute__((swift_error(nonnull_error)))
+- (FrameWithMeta*__nullable)peekNextFrameJson:(NSError**)throwError __attribute__((swift_error(nonnull_error)))
 {
 	*throwError = nil;
 	try
@@ -88,14 +92,14 @@ FrameWithData*__nonnull PopCameraDeviceObjc_PopFrame(int Instance,int Plane0Size
 	}
 }
 
-- (FrameWithData*__nonnull)popNextFrame:(int)Plane0Size error:(NSError**__nonnull)throwError __attribute__((swift_error(nonnull_error)));
+- (FrameWithData*__nullable)popNextFrame:(int)Plane0Size expectedFrameNumber:(int)expectedFrameNumber error:(NSError**__nonnull)throwError __attribute__((swift_error(nonnull_error)));
 {
 	*throwError = nil;
 	try
 	{
 		@try
 		{
-			return PopCameraDeviceObjc_PopFrame( instance, Plane0Size );
+			return PopCameraDeviceObjc_PopFrame( instance, Plane0Size, expectedFrameNumber );
 		}
 		@catch (NSException* exception)
 		{
@@ -108,13 +112,14 @@ FrameWithData*__nonnull PopCameraDeviceObjc_PopFrame(int Instance,int Plane0Size
 		NSString* error = [NSString stringWithUTF8String:e.what()];
 		*throwError = [NSError errorWithDomain:error code:0 userInfo:nil];
 	}
+	return nil;
 }
 
 
 @end
 
 
-FrameWithData*__nonnull PopCameraDeviceObjc_PopFrame(int Instance,int Plane0Size)
+FrameWithData*__nonnull PopCameraDeviceObjc_PopFrame(int Instance,int Plane0Size,int ExpectedFrameNumber)
 {
 	/*
 	 Resource.meta = @(JsonBuffer.data());
@@ -137,6 +142,13 @@ FrameWithData*__nonnull PopCameraDeviceObjc_PopFrame(int Instance,int Plane0Size
 	{
 		throw std::runtime_error("PopCameraDevice_PopNextFrame failed");
 	}
+	if ( ExpectedFrameNumber >= 0 && FrameNumber != ExpectedFrameNumber )
+	{
+		std::stringstream Error;
+		Error << "PopCameraDevice_PopNextFrame expected frame " << ExpectedFrameNumber << " but got " << FrameNumber << "(frame dropped?)";
+		throw std::runtime_error(Error.str());
+	}
+
 	
 	FrameWithData* Frame = [FrameWithData alloc];
 	//Resource.meta = @("{}");
@@ -215,7 +227,7 @@ DLL_EXPORT int PopCameraDeviceObjc_CreateCameraDevice(NSString* Serial,NSDiction
 	return Instance;
 }
 
-DLL_EXPORT NSString*__nullable PopCameraDeviceObjc_PeekNextFrame(int Instance,std::vector<char>& JsonBuffer)
+/*DLL_EXPORT*/ FrameWithMeta*__nullable PopCameraDeviceObjc_PeekNextFrame(int Instance,std::vector<char>& JsonBuffer)
 {
 	JsonBuffer.resize(2*1024*1024);
 	int NextFrame = PopCameraDevice_PeekNextFrame( Instance, JsonBuffer.data(), JsonBuffer.size() );
@@ -235,9 +247,15 @@ DLL_EXPORT NSString*__nullable PopCameraDeviceObjc_PeekNextFrame(int Instance,st
 	//auto JsonData = [NSData dataWithBytes:JsonBuffer.data() length:JsonBuffer.size()];
 	auto JsonData = [NSData dataWithBytes:JsonBuffer.data() length:Length];
 
+	//	this will just verify the json structure and throw on failure
 	NSError* JsonParseError = nil;
 	auto Dictionary = [NSJSONSerialization JSONObjectWithData:JsonData options:NSJSONReadingMutableContainers error:&JsonParseError];
-	
+
+	FrameWithMeta* Frame = [FrameWithMeta alloc];
+	Frame.frameNumber = NextFrame;
+	Frame.metaJson = Json;
+	//Frame.meta = Dictionary;
+
 	//return Dictionary;
-	return Json;
+	return Frame;
 }
