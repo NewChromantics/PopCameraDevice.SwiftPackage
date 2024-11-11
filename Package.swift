@@ -27,7 +27,7 @@ let package = Package(
 		.target(
 			name: "PopCameraDevice",
 			/* include all targets where .h contents need to be accessible to swift */
-			dependencies: ["PopCameraDeviceObjc","PopCameraDeviceCApi","PopCameraDeviceFramework"],
+			dependencies: ["PopCameraDeviceCApi","PopCameraDeviceFramework"],
 			path: "./PopCameraDeviceSwift"
 		),
 		
@@ -43,18 +43,6 @@ let package = Package(
 			//dependencies: ["PopCameraDeviceFramework"],	//	for some reason, this isn't required... even though it references headers inside
 			path: "./PopCameraDeviceCApi"
 		),
-		
-		.target(
-			name: "PopCameraDeviceObjc",
-			dependencies: ["PopCameraDeviceFramework"],
-			path: "./PopCameraDeviceObjc",
-			cxxSettings: [
-				//.headerSearchPath("./"),	//	this allows headers in same place as .cpp
-				//.headerSearchPath("../PopCameraDevice.xcframework/ios-arm64/LibCpp.framework/Headers"),
-				//.headerSearchPath("../PopCameraDevice.xcframework/macos-arm64_x86_64/PopCameraDevice_Osx.framework/Versions/A/Headers/PopCameraDevice.h"),
-			]
-		)
-		,
 /*
 		.testTarget(
 			name: "PopH264Tests",

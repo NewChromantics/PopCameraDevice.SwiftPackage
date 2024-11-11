@@ -19,7 +19,7 @@ struct PopError : LocalizedError
 
 public func GetVersion() -> String
 {
-	let VersionThousand = PopCameraDeviceCApi.PopCameraDevice_GetVersionThousand()
+	let VersionThousand = PopCameraDevice_GetVersionThousand()
 	let Major = (VersionThousand/1000/1000) % 1000;
 	let Minor = (VersionThousand/1000) % 1000;
 	let Patch = (VersionThousand) % 1000;
@@ -192,9 +192,7 @@ public struct Frame
 
 public class PopCameraDeviceInstance
 {
-	var instance = Int32(PopCameraDeviceCApi.PopCameraDevice_NullInstance)
-	
-	//var instanceWrapper : PopCameraDeviceInstanceWrapper	//	objc object
+	var instance = Int32(PopCameraDevice_NullInstance)
 	var allocationError : String?
 
 	public init(serial:String,options:[String:Any])
@@ -204,22 +202,13 @@ public class PopCameraDeviceInstance
 			let jsonData = try JSONSerialization.data(withJSONObject: options, options: JSONSerialization.WritingOptions.prettyPrinted)
 			let json = NSString(data: jsonData as Data, encoding: NSUTF8StringEncoding)! as String
 			
-			/*
-			let optionsJsonData = try? JSONEncoder().encode(options)
-			{
-				if let jsonString = String(data: jsonData, encoding: .utf8) {
-					print(jsonString)
-				}
-			}
-			 */
-			
 			//	gr: we can do ErrorBuffer as a string, and then get an unsafe pointer - but we need to generate a giant string first?
 			let ErrorBufferSize = 1000
 			var ErrorBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: ErrorBufferSize)
 			//	init with terminator
 			ErrorBuffer[0] = 0
 			
-			self.instance = PopCameraDeviceCApi.PopCameraDevice_CreateCameraDevice(serial, json, ErrorBuffer, Int32(ErrorBufferSize) )
+			self.instance = PopCameraDevice_CreateCameraDevice(serial, json, ErrorBuffer, Int32(ErrorBufferSize) )
 			
 			//	grab string & free the buffer we made
 			let Error = String(cString: ErrorBuffer)
@@ -229,10 +218,11 @@ public class PopCameraDeviceInstance
 				throw PopError(Error)
 			}
 			
-/*
-			instanceWrapper = PopCameraDeviceInstanceWrapper()
-			try instanceWrapper.allocate(withSerial: serial, options: options)
- */
+			if ( instance == PopCameraDevice_NullInstance )
+			{
+				throw PopError("Failed to allocated instance (no error)")
+			}
+		
 			var Version = GetVersion()
 			print("Allocated instance \(instance); PopCameraDevice version \(Version)")
 		}
@@ -249,7 +239,7 @@ public class PopCameraDeviceInstance
 	
 	public func Free()
 	{
-		PopCameraDeviceCApi.PopCameraDevice_FreeCameraDevice(instance)
+		PopCameraDevice_FreeCameraDevice(instance)
 	}
 	
 	public func PopNextFrame() throws -> Frame?
@@ -275,26 +265,8 @@ public class PopCameraDeviceInstance
 				return nil
 			}
 			
-			/*
-			var NextFrameMeta = try instanceWrapper.peekNextFrameJson()
-			
-			//	null json = no frame pending
-			guard let NextFrameMeta else
-			{
-				return nil
-			}
-			*/
 			let NextFrameMetaJsonData = NextFrameMetaJson.data(using: .utf8)!
 			var Meta = try JSONDecoder().decode(FrameMeta.self, from: NextFrameMetaJsonData)
-			
-			/*
-			//	convert depth plane
-			if ( Meta.Planes?.first?.Format == "Depth16mm" )
-			{
-				let DepthPlane = Meta.Planes![0].ConvertDepth()
-				Meta.Planes = [DepthPlane]
-			}
-			*/
 			
 			//	pop frame
 			let Plane0Size : Int32 = Int32(Meta.Planes?.first?.DataSize ?? 0 )
@@ -310,14 +282,7 @@ public class PopCameraDeviceInstance
 			{
 				throw PopError("Popped different frame to peek")
 			}
-			/*
-			var PoppedFrame = try instanceWrapper.popNextFrame(Plane0Size,expectedFrameNumber:NextFrameMeta.frameNumber)
 			
-			guard let PoppedFrame else
-			{
-				throw PopError("Wrongly got null frame back from popNextFrame when it should have thrown")
-			}
-			*/
 			//	gr: this is a copy, can we start with just Data?
 			let Plane0Data = Data(bytes:Plane0Buffer,count:Int(Plane0Size))
 			Plane0Buffer.deallocate()
@@ -332,15 +297,7 @@ public class PopCameraDeviceInstance
 			throw PopError( OutputError )
 		}
 	}
-	/*
-	//	returns frame number popped
-	public func PopNextFrame() async throws -> Int
-	{
-		//	todo: get plane data!
-		var NextFrame = try instanceWrapper.popNextFrame()
-		return Int(NextFrame)
-	}
-*/
+
 }
 
 
