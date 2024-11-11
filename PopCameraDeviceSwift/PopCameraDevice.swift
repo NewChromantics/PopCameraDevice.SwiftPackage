@@ -1,6 +1,7 @@
 import SwiftUI
-import PopCameraDeviceObjc
 import CoreMediaIO
+import PopCameraDeviceCApi
+
 
 struct PopError : LocalizedError
 {
@@ -18,8 +19,14 @@ struct PopError : LocalizedError
 
 public func GetVersion() -> String
 {
-	var Version = PopCameraDeviceObjc_GetVersion()
-	return Version
+	let VersionThousand = PopCameraDeviceCApi.PopCameraDevice_GetVersionThousand()
+	let Major = (VersionThousand/1000/1000) % 1000;
+	let Minor = (VersionThousand/1000) % 1000;
+	let Patch = (VersionThousand) % 1000;
+	return "\(Major).\(Minor).\(Patch)"
+	
+	//var Version = PopCameraDeviceObjc_GetVersion()
+	//return Version
 }
 
 
@@ -92,8 +99,14 @@ public struct EnumMeta: Decodable
 
 public func EnumDevices(requireSerialPrefix:String="") throws -> [EnumDeviceMeta]
 {
+	let JsonBufferSize = 1024 * 10
+	let JsonBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: JsonBufferSize)
+	PopCameraDevice_EnumCameraDevicesJson(JsonBuffer, Int32(JsonBufferSize))
+	let json = String(cString: JsonBuffer)
+	JsonBuffer.deallocate()
+	
 	//	get json and decode to structs
-	let json = PopCameraDeviceObjc_EnumCameraDevicesJson()
+	//let json = PopCameraDeviceObjc_EnumCameraDevicesJson()
 	let jsonData = json.data(using: .utf8)!
 	print(json)
 	let EnumMeta: EnumMeta = try JSONDecoder().decode(EnumMeta.self, from: jsonData)
@@ -179,23 +192,49 @@ public struct Frame
 
 public class PopCameraDeviceInstance
 {
-	var instanceWrapper : PopCameraDeviceInstanceWrapper	//	objc object
+	var instance = Int32(PopCameraDeviceCApi.PopCameraDevice_NullInstance)
+	
+	//var instanceWrapper : PopCameraDeviceInstanceWrapper	//	objc object
 	var allocationError : String?
 
-	public init(serial:String,options:[AnyHashable:Any])
+	public init(serial:String,options:[String:Any])
 	{
 		do
 		{
-			instanceWrapper = PopCameraDeviceInstanceWrapper()
+			let jsonData = try JSONSerialization.data(withJSONObject: options, options: JSONSerialization.WritingOptions.prettyPrinted)
+			let json = NSString(data: jsonData as Data, encoding: NSUTF8StringEncoding)! as String
+			
 			/*
-			let options : [AnyHashable:Any] = [
-				//"Format":"Yuv_8_88"
-				"Format":"RGB"
-			]
+			let optionsJsonData = try? JSONEncoder().encode(options)
+			{
+				if let jsonString = String(data: jsonData, encoding: .utf8) {
+					print(jsonString)
+				}
+			}
 			 */
+			
+			//	gr: we can do ErrorBuffer as a string, and then get an unsafe pointer - but we need to generate a giant string first?
+			let ErrorBufferSize = 1000
+			var ErrorBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: ErrorBufferSize)
+			//	init with terminator
+			ErrorBuffer[0] = 0
+			
+			self.instance = PopCameraDeviceCApi.PopCameraDevice_CreateCameraDevice(serial, json, ErrorBuffer, Int32(ErrorBufferSize) )
+			
+			//	grab string & free the buffer we made
+			let Error = String(cString: ErrorBuffer)
+			ErrorBuffer.deallocate()
+			if ( !Error.isEmpty )
+			{
+				throw PopError(Error)
+			}
+			
+/*
+			instanceWrapper = PopCameraDeviceInstanceWrapper()
 			try instanceWrapper.allocate(withSerial: serial, options: options)
+ */
 			var Version = GetVersion()
-			print("Allocated instance \(instanceWrapper); PopCameraDevice version \(Version)")
+			print("Allocated instance \(instance); PopCameraDevice version \(Version)")
 		}
 		catch
 		{
@@ -210,7 +249,7 @@ public class PopCameraDeviceInstance
 	
 	public func Free()
 	{
-		instanceWrapper.free()
+		PopCameraDeviceCApi.PopCameraDevice_FreeCameraDevice(instance)
 	}
 	
 	public func PopNextFrame() throws -> Frame?
@@ -222,6 +261,21 @@ public class PopCameraDeviceInstance
 		
 		do
 		{
+			let JsonBufferSize = 1024 * 10
+			
+			let PeekMetaJsonBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: JsonBufferSize)
+			//	init with terminator
+			PeekMetaJsonBuffer[0] = 0
+			
+			let PeekFrameNumber = PopCameraDevice_PeekNextFrame( instance, PeekMetaJsonBuffer, Int32(JsonBufferSize) )
+			//	grab string & free the buffer we made
+			let NextFrameMetaJson = String(cString: PeekMetaJsonBuffer)
+			if ( PeekFrameNumber < 0 )
+			{
+				return nil
+			}
+			
+			/*
 			var NextFrameMeta = try instanceWrapper.peekNextFrameJson()
 			
 			//	null json = no frame pending
@@ -229,8 +283,8 @@ public class PopCameraDeviceInstance
 			{
 				return nil
 			}
-			
-			let NextFrameMetaJsonData = NextFrameMeta.metaJson.data(using: .utf8)!
+			*/
+			let NextFrameMetaJsonData = NextFrameMetaJson.data(using: .utf8)!
 			var Meta = try JSONDecoder().decode(FrameMeta.self, from: NextFrameMetaJsonData)
 			
 			/*
@@ -244,13 +298,31 @@ public class PopCameraDeviceInstance
 			
 			//	pop frame
 			let Plane0Size : Int32 = Int32(Meta.Planes?.first?.DataSize ?? 0 )
+			let Plane0Buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: Int(Plane0Size))
+			
+			let PopMetaJsonBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: JsonBufferSize)
+			//	init with terminator
+			PopMetaJsonBuffer[0] = 0
+			
+			
+			let PoppedFrameNumber = PopCameraDevice_PopNextFrame( instance, PopMetaJsonBuffer, Int32(JsonBufferSize), Plane0Buffer, Plane0Size, nil, 0, nil, 0)
+			if ( PoppedFrameNumber != PeekFrameNumber )
+			{
+				throw PopError("Popped different frame to peek")
+			}
+			/*
 			var PoppedFrame = try instanceWrapper.popNextFrame(Plane0Size,expectedFrameNumber:NextFrameMeta.frameNumber)
 			
 			guard let PoppedFrame else
 			{
 				throw PopError("Wrongly got null frame back from popNextFrame when it should have thrown")
 			}
-			var frame = Frame(Meta: Meta, PixelData: PoppedFrame.plane0, FrameNumber:PoppedFrame.frameNumber)
+			*/
+			//	gr: this is a copy, can we start with just Data?
+			let Plane0Data = Data(bytes:Plane0Buffer,count:Int(Plane0Size))
+			Plane0Buffer.deallocate()
+			
+			var frame = Frame(Meta: Meta, PixelData: Plane0Data, FrameNumber:PoppedFrameNumber)
 			
 			return frame
 		}
