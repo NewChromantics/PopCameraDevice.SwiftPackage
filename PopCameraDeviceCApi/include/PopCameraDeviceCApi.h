@@ -4,5 +4,5 @@
 	- No need for a module map
 	- C only (not c++)
 */
-#define __export
+#define __export	//	C doesn't need extern"C"
 #include "PopCameraDevice_Osx/PopCameraDevice.h"
