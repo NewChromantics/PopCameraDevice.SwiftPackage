@@ -7,6 +7,7 @@
 #import <Foundation/Foundation.h>
 #import <Accelerate/Accelerate.h>
 
+
 //	linkage from swift needs to not have extern"C" and does no mangling.
 //	objective-c mangles the name so this needs to be extern"C"
 #if !defined(DLL_EXPORT)

@@ -1,0 +1,6 @@
+module PopCameraDeviceObjc {
+	//header "{.xcframework/Headers}"
+	header "PopCameraDevice_Osx/PopCameraDevice.h"
+	export *
+}
+jhrjhyhyfr

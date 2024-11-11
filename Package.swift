@@ -27,7 +27,7 @@ let package = Package(
 		.target(
 			name: "PopCameraDevice",
 			/* include all targets where .h contents need to be accessible to swift */
-			dependencies: ["PopCameraDeviceObjc","PopCameraDeviceFramework"],
+			dependencies: ["PopCameraDeviceObjc","PopCameraDeviceCApi","PopCameraDeviceFramework"],
 			path: "./PopCameraDeviceSwift"
 		),
 		
@@ -39,14 +39,19 @@ let package = Package(
 				),
 		
 		.target(
+			name: "PopCameraDeviceCApi",
+			//dependencies: ["PopCameraDeviceFramework"],	//	for some reason, this isn't required... even though it references headers inside
+			path: "./PopCameraDeviceCApi"
+		),
+		
+		.target(
 			name: "PopCameraDeviceObjc",
-			dependencies: [],
+			dependencies: ["PopCameraDeviceFramework"],
 			path: "./PopCameraDeviceObjc",
-			//publicHeadersPath: ".",	//	not using include/ seems to have some errors resolving symbols? (this may before my extern c's)
 			cxxSettings: [
-				.headerSearchPath("./"),	//	this allows headers in same place as .cpp
+				//.headerSearchPath("./"),	//	this allows headers in same place as .cpp
 				//.headerSearchPath("../PopCameraDevice.xcframework/ios-arm64/LibCpp.framework/Headers"),
-				.headerSearchPath("../PopCameraDevice.xcframework/macos-arm64_x86_64/PopH264_Osx.framework/Versions/A/Headers/PopCameraDevice.h"),
+				//.headerSearchPath("../PopCameraDevice.xcframework/macos-arm64_x86_64/PopCameraDevice_Osx.framework/Versions/A/Headers/PopCameraDevice.h"),
 			]
 		)
 		,
