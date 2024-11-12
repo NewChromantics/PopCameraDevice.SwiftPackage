@@ -10,9 +10,9 @@
 
 //	todo: get PopCameraDevice to have one name!
 
-#if defined(TARGET_OS_IPHONE)
+#if TARGET_OS_IPHONE==1
 #include "PopCameraDevice_Ios/PopCameraDevice.h"
-#elif defined(TARGET_OS_MAC)	//	this seems to always be prsent, so check ios first
+#elif TARGET_OS_MAC==1
 #include "PopCameraDevice_Osx/PopCameraDevice.h"
 #else
 #error unknown target
