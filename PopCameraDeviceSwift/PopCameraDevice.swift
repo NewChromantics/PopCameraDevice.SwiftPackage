@@ -2,7 +2,7 @@ import SwiftUI
 //import CoreMediaIO	//	macos
 import CoreMedia	//	ios
 import PopCameraDeviceCApi
-
+import VideoToolbox
 
 public struct PopError : LocalizedError
 {
@@ -127,6 +127,7 @@ public struct PlaneMeta: Decodable
 	public let Format : String	//	make this an enum
 	public let Width : Int32
 	public let Height : Int32
+	public var BytesPerRow : Int {	return Int(Width * Height * Channels)	}	//	note: format may be non 1 byte
 	
 	public func GetPixelFormat() throws ->CMPixelFormatType
 	{
@@ -189,6 +190,84 @@ public struct Frame
 	public var Meta : FrameMeta
 	public var PixelData : Data?
 	public var FrameNumber : Int32
+
+	/*
+	fileprivate extension CIImage {
+		var image: Image? {
+			let ciContext = CIContext()
+			guard let cgImage = ciContext.createCGImage(self, from: self.extent) else { return nil }
+			return Image(decorative: cgImage, scale: 1, orientation: .up)
+		}
+	}
+	 */
+	public func CreateSwiftImage() throws -> Image
+	{
+		let pixelBuffer = try CreateCoreVideoPixelBuffer()
+		let cg = try CreateCGImage()
+#if os(iOS)
+		let uiimage = UIImage(cgImage:cg)
+		return try Image(uiImage: NewFrame.CreateUIIamge() )
+#else
+		//	zero = auto size
+		let uiimage = NSImage(cgImage:cg, size:.zero)
+		return try Image(nsImage: uiimage)
+#endif
+	}
+	
+	
+	public func CreateCGImage() throws -> CGImage
+	{
+		let pb = try CreateCoreVideoPixelBuffer()
+		var cgImage: CGImage?
+		let Result = VTCreateCGImageFromCVPixelBuffer( pb, options:nil, imageOut:&cgImage)
+		if ( Result != 0 || cgImage == nil )
+		{
+			throw PopError("VideoToolbox failed to create CGImage; \(Result)")
+		}
+		return cgImage!
+	}
+	
+	public func CreateCoreVideoPixelBuffer(pool:CVPixelBufferPool?=nil,poolAttributes:NSDictionary?=nil) throws -> CVPixelBuffer
+	{
+		guard var PixelData else
+		{
+			throw PopError("Missing pixels")
+		}
+		guard let plane0 = Meta.Planes?[0] else
+		{
+			throw PopError("Missing planes")
+		}
+		let allocator : CFAllocator? = nil
+		let w = Int(plane0.Width)
+		let h = Int(plane0.Height)
+		let fmt : OSType = try plane0.GetPixelFormat()
+		let PlaneCount = 1
+		let pixelBufferAttributes : CFDictionary? = nil
+		var pixelBufferMaybe : CVPixelBuffer!
+		try PixelData.withUnsafeMutableBytes
+		{
+			pixelBytes in//UnsafeRawBufferPointer in
+			let Result = CVPixelBufferCreateWithBytes( allocator, w, h, fmt, pixelBytes, plane0.BytesPerRow, nil, nil, pixelBufferAttributes, &pixelBufferMaybe )
+			//CVPixelBufferCreateWithPlanarBytes( allocator, w, h, fmt, pixelBytes, PixelData.count, t, PlaneCount, ess: UnsafeMutablePointer<UnsafeMutableRawPointer?>, _ planeWidth: UnsafeMutablePointer<Int>, _ planeHeight: UnsafeMutablePointer<Int>, _ planeBytesPerRow: UnsafeMutablePointer<Int>, nil, nil, pixelBufferAttributes, pixelBufferMaybe ) -> CVReturn
+			if ( Result != 0 )
+			{
+				throw PopError("Failed to allocated pixel buffer; \(Result)")
+			}
+		}
+		/*
+		var pixelBufferMaybe: CVPixelBuffer?
+		CVPIxelBuferAllo
+		let error : OSStatus = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool, poolAttributes, &pixelBufferMaybe)
+		if error != 0 || pixelBufferMaybe == nil
+		{
+			throw PopError("Failed to allocate pixel buffer \(error)")
+		}
+		
+		let pixelBuffer = pixelBufferMaybe!
+		return pixelBuffer
+		 */
+		return pixelBufferMaybe!
+	}
 }
 
 public class PopCameraDeviceInstance
@@ -259,15 +338,35 @@ public class PopCameraDeviceInstance
 			PeekMetaJsonBuffer[0] = 0
 			
 			let PeekFrameNumber = PopCameraDevice_PeekNextFrame( instance, PeekMetaJsonBuffer, Int32(JsonBufferSize) )
-			//	grab string & free the buffer we made
-			let NextFrameMetaJson = String(cString: PeekMetaJsonBuffer)
+			var Meta : FrameMeta? = nil
+
+			do
+			{
+				//	grab string & free the buffer we made
+				let NextFrameMetaJson = String(cString: PeekMetaJsonBuffer)
+				let NextFrameMetaJsonData = NextFrameMetaJson.data(using: .utf8)!
+				Meta = try JSONDecoder().decode(FrameMeta.self, from: NextFrameMetaJsonData)
+				if let error = Meta!.Error
+				{
+					throw PopError("Popped frame error \(error)")
+				}
+			}
+			catch
+			{
+				//	failed to decode json, but that's fine if nothing was popped
+				if ( PeekFrameNumber < 0 )
+				{
+				}
+			}
 			if ( PeekFrameNumber < 0 )
 			{
 				return nil
 			}
 			
-			let NextFrameMetaJsonData = NextFrameMetaJson.data(using: .utf8)!
-			var Meta = try JSONDecoder().decode(FrameMeta.self, from: NextFrameMetaJsonData)
+			guard let Meta else
+			{
+				throw PopError("Failed to decode frame's meta")
+			}
 			
 			//	pop frame
 			let Plane0Size : Int32 = Int32(Meta.Planes?.first?.DataSize ?? 0 )
