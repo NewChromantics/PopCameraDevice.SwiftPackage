@@ -1,17 +1,18 @@
 import SwiftUI
-import CoreMediaIO
+//import CoreMediaIO	//	macos
+import CoreMedia	//	ios
 import PopCameraDeviceCApi
 
 
-struct PopError : LocalizedError
+public struct PopError : LocalizedError
 {
 	let error: String
 	
-	init(_ description: String) {
+	public init(_ description: String) {
 		error = description
 	}
 	
-	var errorDescription: String? {
+	public var errorDescription: String? {
 		error
 	}
 }
