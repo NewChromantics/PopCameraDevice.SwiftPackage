@@ -1,5 +1,6 @@
 import PopCameraDevice
-import Cocoa
+//import Cocoa
+import Foundation
 
 /*
 	currently a global manager/instance for tracking enumerated devices

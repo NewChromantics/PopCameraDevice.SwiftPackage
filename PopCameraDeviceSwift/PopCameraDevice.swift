@@ -133,7 +133,9 @@ public struct PlaneMeta: Decodable
 	{
 		switch Format
 		{
+				//VideoToolbox failed to create CGImage; -12902
 			//case "RGB":	return kCVPixelFormatType_24RGB
+				
 			//case "uyvy_8888":	return kCVPixelFormatType_422YpCbCr8;
 				
 			default:
@@ -206,7 +208,7 @@ public struct Frame
 		let cg = try CreateCGImage()
 #if os(iOS)
 		let uiimage = UIImage(cgImage:cg)
-		return try Image(uiImage: NewFrame.CreateUIIamge() )
+		return try Image(uiImage: uiimage )
 #else
 		//	zero = auto size
 		let uiimage = NSImage(cgImage:cg, size:.zero)
@@ -244,28 +246,32 @@ public struct Frame
 		let PlaneCount = 1
 		let pixelBufferAttributes : CFDictionary? = nil
 		var pixelBufferMaybe : CVPixelBuffer!
-		try PixelData.withUnsafeMutableBytes
+		//try PixelData.withUnsafeMutableBytes	//	mutable if using CreateWithBytes
+		try PixelData.withUnsafeBytes	//	mutable if using CreateWithBytes
 		{
-			pixelBytes in//UnsafeRawBufferPointer in
-			let Result = CVPixelBufferCreateWithBytes( allocator, w, h, fmt, pixelBytes, plane0.BytesPerRow, nil, nil, pixelBufferAttributes, &pixelBufferMaybe )
+			(pixelBytes: UnsafePointer<UInt8>) /*-> Int*/ in
+			
+			//	CVPixelBufferCreateWithBytes points at original pointer, not a copy
+			//	todo: use this and manage release with the release callback
+			//let Result = CVPixelBufferCreateWithBytes( allocator, w, h, fmt, pixelBytes, plane0.BytesPerRow, nil, nil, pixelBufferAttributes, &pixelBufferMaybe )
 			//CVPixelBufferCreateWithPlanarBytes( allocator, w, h, fmt, pixelBytes, PixelData.count, t, PlaneCount, ess: UnsafeMutablePointer<UnsafeMutableRawPointer?>, _ planeWidth: UnsafeMutablePointer<Int>, _ planeHeight: UnsafeMutablePointer<Int>, _ planeBytesPerRow: UnsafeMutablePointer<Int>, nil, nil, pixelBufferAttributes, pixelBufferMaybe ) -> CVReturn
+			//	create empty buffer & copy into
+			let Result = CVPixelBufferCreate( allocator, w, h, fmt, pixelBufferAttributes, &pixelBufferMaybe )
 			if ( Result != 0 )
 			{
-				throw PopError("Failed to allocated pixel buffer; \(Result)")
+				throw PopError("Failed to allocate pixel buffer; error=\(Result)")
 			}
+			guard let pixelBuffer = pixelBufferMaybe else
+			{
+				throw PopError("Failed to allocated pixel buffer, no error - null pixelbuffer")
+			}
+			CVPixelBufferLockBaseAddress(pixelBuffer, [])
+			let destData = CVPixelBufferGetBaseAddress(pixelBuffer)
+			
+			let destDataSize = CVPixelBufferGetDataSize(pixelBuffer)
+			destData?.copyMemory(from: pixelBytes, byteCount: PixelData.count)
+			CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
 		}
-		/*
-		var pixelBufferMaybe: CVPixelBuffer?
-		CVPIxelBuferAllo
-		let error : OSStatus = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool, poolAttributes, &pixelBufferMaybe)
-		if error != 0 || pixelBufferMaybe == nil
-		{
-			throw PopError("Failed to allocate pixel buffer \(error)")
-		}
-		
-		let pixelBuffer = pixelBufferMaybe!
-		return pixelBuffer
-		 */
 		return pixelBufferMaybe!
 	}
 }
@@ -351,11 +357,12 @@ public class PopCameraDeviceInstance
 					throw PopError("Popped frame error \(error)")
 				}
 			}
-			catch
+			catch let error
 			{
 				//	failed to decode json, but that's fine if nothing was popped
-				if ( PeekFrameNumber < 0 )
+				if ( PeekFrameNumber != -1 )
 				{
+					throw error
 				}
 			}
 			if ( PeekFrameNumber < 0 )
