@@ -10,7 +10,7 @@ let package = Package(
 	name: "PopCameraDevice",
 	
 	platforms: [
-		.iOS(.v15),
+		.iOS(.v16),
 		.macOS(.v13)
 	],
 	
