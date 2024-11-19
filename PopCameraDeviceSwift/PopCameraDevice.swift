@@ -3,6 +3,7 @@ import SwiftUI
 import CoreMedia	//	ios
 import PopCameraDeviceCApi
 import VideoToolbox
+import Accelerate
 
 public struct PopError : LocalizedError
 {
@@ -15,6 +16,75 @@ public struct PopError : LocalizedError
 	public var errorDescription: String? {
 		error
 	}
+}
+
+public func PixelBufferToSwiftImage(_ pixelBuffer:CVPixelBuffer) throws -> Image
+{
+	let cg = try PixelBufferToCGImage(pixelBuffer)
+#if os(iOS)
+	let uiimage = UIImage(cgImage:cg)
+	return try Image(uiImage: uiimage )
+#else
+	//	zero = auto size
+	let uiimage = NSImage(cgImage:cg, size:.zero)
+	return try Image(nsImage: uiimage)
+#endif
+}
+
+
+public func PixelBufferToCGImage(_ pb:CVPixelBuffer) throws -> CGImage
+{
+	var cgImage: CGImage?
+	
+	let InputWidth = CVPixelBufferGetWidth(pb)
+	let InputHeight = CVPixelBufferGetHeight(pb)
+	let InputFormatName = CVPixelBufferGetPixelFormatName(pixelBuffer:pb)
+	let inputFormat = CVPixelBufferGetPixelFormatType(pb)
+
+	//	ipad/ios18 can't auto convert kCVPixelFormatType_OneComponent32Float
+	//	macos and iphone15 convert this into a red image
+	//	using the accellerate framework may be a generic solution here
+	/*
+	if ( inputFormat == kCVPixelFormatType_OneComponent32Float )
+	{
+		var vimagebuffer = vImage_Buffer()
+		var rgbCGImgFormat : vImage_CGImageFormat = vImage_CGImageFormat(
+			bitsPerComponent: 8,
+			bitsPerPixel: 32,
+			colorSpace: CGColorSpaceCreateDeviceRGB(),
+			bitmapInfo: CGBitmapInfo(rawValue:kCGBitmapByteOrder32Host.rawValue/* | kCGImageAlphaNoneSkipFirst.*/)
+		)!
+		
+		/*
+		func vImageBuffer_InitWithCVPixelBuffer(
+			_ buffer: UnsafeMutablePointer<vImage_Buffer>,
+			_ desiredFormat: UnsafeMutablePointer<vImage_CGImageFormat>,
+			_ cvPixelBuffer: CVPixelBuffer,
+			_ cvImageFormat: vImageCVImageFormat!,
+			_ backgroundColor: UnsafePointer<CGFloat>!,
+			_ flags: vImage_Flags
+		) -> vImage_Error
+		 */
+		let backgroundColour : [CGFloat] = [1,1,1,1]
+		//vImageCVImageFormatRef cvImgFormatRef;
+		var cvImgFormatPtr : Unmanaged<vImageCVImageFormat> = vImageCVImageFormat_CreateWithCVPixelBuffer(pb)!
+		var cvImgFormat : vImageCVImageFormat = cvImgFormatPtr.takeRetainedValue()
+		let flags = vImage_Flags()
+		let error = vImageBuffer_InitWithCVPixelBuffer( &vimagebuffer, &rgbCGImgFormat, pb, cvImgFormat, backgroundColour, flags )
+		if ( error != 0 )
+		{
+			throw PopError("Failed to make vimage \(GetVideoToolboxError(OSStatus(error)))")
+		}
+	}
+	*/
+	
+	let Result = VTCreateCGImageFromCVPixelBuffer( pb, options:nil, imageOut:&cgImage)
+
+	if ( Result != 0 || cgImage == nil )
+	{
+		throw PopError("VideoToolbox failed to create CGImage (\(InputWidth)x\(InputHeight)[\(InputFormatName)]; \(GetVideoToolboxError(Result))")
+	}
+	return cgImage!
 }
 
 
@@ -133,7 +203,7 @@ public struct PlaneMeta: Decodable
 	{
 		switch Format
 		{
-				//VideoToolbox failed to create CGImage; -12902
+				//VideoToolbox failed to create CGImage; -12902 (bad param)
 			//case "RGB":	return kCVPixelFormatType_24RGB
 				
 			//case "uyvy_8888":	return kCVPixelFormatType_422YpCbCr8;
@@ -205,29 +275,10 @@ public struct Frame
 	public func CreateSwiftImage() throws -> Image
 	{
 		let pixelBuffer = try CreateCoreVideoPixelBuffer()
-		let cg = try CreateCGImage()
-#if os(iOS)
-		let uiimage = UIImage(cgImage:cg)
-		return try Image(uiImage: uiimage )
-#else
-		//	zero = auto size
-		let uiimage = NSImage(cgImage:cg, size:.zero)
-		return try Image(nsImage: uiimage)
-#endif
+		return try PixelBufferToSwiftImage(pixelBuffer)
 	}
 	
 	
-	public func CreateCGImage() throws -> CGImage
-	{
-		let pb = try CreateCoreVideoPixelBuffer()
-		var cgImage: CGImage?
-		let Result = VTCreateCGImageFromCVPixelBuffer( pb, options:nil, imageOut:&cgImage)
-		if ( Result != 0 || cgImage == nil )
-		{
-			throw PopError("VideoToolbox failed to create CGImage; \(Result)")
-		}
-		return cgImage!
-	}
 	
 	public func CreateCoreVideoPixelBuffer(pool:CVPixelBufferPool?=nil,poolAttributes:NSDictionary?=nil) throws -> CVPixelBuffer
 	{
