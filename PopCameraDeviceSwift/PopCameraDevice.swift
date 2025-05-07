@@ -172,9 +172,12 @@ public func EnumDevices(requireSerialPrefix:String="") throws -> [EnumDeviceMeta
 {
 	let JsonBufferSize = 1024 * 10
 	let JsonBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: JsonBufferSize)
+	defer
+	{
+		JsonBuffer.deallocate()
+	}
 	PopCameraDevice_EnumCameraDevicesJson(JsonBuffer, Int32(JsonBufferSize))
 	let json = String(cString: JsonBuffer)
-	JsonBuffer.deallocate()
 	
 	//	get json and decode to structs
 	//let json = PopCameraDeviceObjc_EnumCameraDevicesJson()
@@ -347,6 +350,10 @@ public class PopCameraDeviceInstance
 			//	gr: we can do ErrorBuffer as a string, and then get an unsafe pointer - but we need to generate a giant string first?
 			let ErrorBufferSize = 1000
 			var ErrorBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: ErrorBufferSize)
+			defer
+			{
+				ErrorBuffer.deallocate()
+			}
 			//	init with terminator
 			ErrorBuffer[0] = 0
 			
@@ -354,7 +361,6 @@ public class PopCameraDeviceInstance
 			
 			//	grab string & free the buffer we made
 			let Error = String(cString: ErrorBuffer)
-			ErrorBuffer.deallocate()
 			if ( !Error.isEmpty )
 			{
 				throw PopError(Error)
