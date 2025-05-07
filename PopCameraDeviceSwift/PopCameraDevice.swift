@@ -395,7 +395,13 @@ public class PopCameraDeviceInstance
 			//	init with terminator
 			PeekMetaJsonBuffer[0] = 0
 			
-			let PeekFrameNumber = PopCameraDevice_PeekNextFrame( instance, PeekMetaJsonBuffer, Int32(JsonBufferSize) )
+			//	gr: this is returning negative number - internally stored as 64bit
+			//		the popcamera api needs to change to either return 32bit numbers (fraught with problems)
+			//		or api return 64bit and application deal with it
+			var PeekFrameNumber = PopCameraDevice_PeekNextFrame( instance, PeekMetaJsonBuffer, Int32(JsonBufferSize) )
+			let InvalidFrameNumber = PeekFrameNumber == -1
+			PeekFrameNumber = PeekFrameNumber & 0x7fffffff
+			
 			var Meta : FrameMeta? = nil
 
 			do
@@ -412,12 +418,12 @@ public class PopCameraDeviceInstance
 			catch let error
 			{
 				//	failed to decode json, but that's fine if nothing was popped
-				if ( PeekFrameNumber != -1 )
+				if ( !InvalidFrameNumber )
 				{
 					throw error
 				}
 			}
-			if ( PeekFrameNumber < 0 )
+			if ( InvalidFrameNumber )
 			{
 				return nil
 			}
@@ -436,7 +442,8 @@ public class PopCameraDeviceInstance
 			PopMetaJsonBuffer[0] = 0
 			
 			
-			let PoppedFrameNumber = PopCameraDevice_PopNextFrame( instance, PopMetaJsonBuffer, Int32(JsonBufferSize), Plane0Buffer, Plane0Size, nil, 0, nil, 0)
+			var PoppedFrameNumber = PopCameraDevice_PopNextFrame( instance, PopMetaJsonBuffer, Int32(JsonBufferSize), Plane0Buffer, Plane0Size, nil, 0, nil, 0)
+			PoppedFrameNumber = PoppedFrameNumber & 0x7fffffff
 			if ( PoppedFrameNumber != PeekFrameNumber )
 			{
 				throw PopError("Popped different frame to peek")
