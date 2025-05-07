@@ -333,6 +333,10 @@ public class PopCameraDeviceInstance
 	var instance = Int32(PopCameraDevice_NullInstance)
 	var allocationError : String?
 
+	static let JsonBufferSize = 1024 * 10
+	private var PeekMetaJsonBuffer = Data(count: PopCameraDeviceInstance.JsonBufferSize )
+	private var PopMetaJsonBuffer = Data(count: PopCameraDeviceInstance.JsonBufferSize )
+	
 	public init(serial:String,options:[String:Any])
 	{
 		do
@@ -380,6 +384,59 @@ public class PopCameraDeviceInstance
 		PopCameraDevice_FreeCameraDevice(instance)
 	}
 	
+	func PeekFrameNumberAndMeta() throws -> (Int32,FrameMeta)?
+	{
+		let PeekMetaJsonBufferSize = Int32(PeekMetaJsonBuffer.count)
+		var (PeekFrameNumber,FrameMetaJson) = PeekMetaJsonBuffer.withUnsafeMutableBytes 
+		{
+			(JsonBuffer8:UnsafeMutablePointer<CChar>) in
+			//	init with terminator
+			JsonBuffer8[0] = 0
+			var FrameNumber = PopCameraDevice_PeekNextFrame( instance, JsonBuffer8, PeekMetaJsonBufferSize )
+			let FrameMetaJson = String(cString: JsonBuffer8)
+			return (FrameNumber,FrameMetaJson)
+		}
+		
+		//	gr: this is returning negative number - internally stored as 64bit
+		//		the popcamera api needs to change to either return 32bit numbers (fraught with problems)
+		//		or api return 64bit and application deal with it
+		let InvalidFrameNumber = PeekFrameNumber == -1
+		PeekFrameNumber = PeekFrameNumber & 0x7fffffff
+		
+		//	decode meta
+		var Meta : FrameMeta? = nil
+		
+		do
+		{
+			//	grab string & free the buffer we made
+			let NextFrameMetaJsonData = FrameMetaJson.data(using: .utf8)!
+			Meta = try JSONDecoder().decode(FrameMeta.self, from: NextFrameMetaJsonData)
+			if let error = Meta!.Error
+			{
+				throw PopError("Popped frame error \(error)")
+			}
+		}
+		catch let error
+		{
+			//	failed to decode json, but that's fine if nothing was popped (assuming nothing written to buffer)
+			if ( !InvalidFrameNumber )
+			{
+				throw error
+			}
+		}
+		
+		if ( InvalidFrameNumber )
+		{
+			return nil
+		}
+		
+		guard let Meta else
+		{
+			throw PopError("Failed to decode frame's meta")
+		}		
+		return (PeekFrameNumber,Meta)
+	}
+	
 	public func PopNextFrame() throws -> Frame?
 	{
 		if let allocationError
@@ -389,71 +446,40 @@ public class PopCameraDeviceInstance
 		
 		do
 		{
-			let JsonBufferSize = 1024 * 10
-			
-			let PeekMetaJsonBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: JsonBufferSize)
-			//	init with terminator
-			PeekMetaJsonBuffer[0] = 0
-			
-			//	gr: this is returning negative number - internally stored as 64bit
-			//		the popcamera api needs to change to either return 32bit numbers (fraught with problems)
-			//		or api return 64bit and application deal with it
-			var PeekFrameNumber = PopCameraDevice_PeekNextFrame( instance, PeekMetaJsonBuffer, Int32(JsonBufferSize) )
-			let InvalidFrameNumber = PeekFrameNumber == -1
-			PeekFrameNumber = PeekFrameNumber & 0x7fffffff
-			
-			var Meta : FrameMeta? = nil
-
-			do
-			{
-				//	grab string & free the buffer we made
-				let NextFrameMetaJson = String(cString: PeekMetaJsonBuffer)
-				let NextFrameMetaJsonData = NextFrameMetaJson.data(using: .utf8)!
-				Meta = try JSONDecoder().decode(FrameMeta.self, from: NextFrameMetaJsonData)
-				if let error = Meta!.Error
-				{
-					throw PopError("Popped frame error \(error)")
-				}
-			}
-			catch let error
-			{
-				//	failed to decode json, but that's fine if nothing was popped
-				if ( !InvalidFrameNumber )
-				{
-					throw error
-				}
-			}
-			if ( InvalidFrameNumber )
+			guard let (PeekFrameNumber,Meta) = try PeekFrameNumberAndMeta() else
 			{
 				return nil
 			}
 			
-			guard let Meta else
-			{
-				throw PopError("Failed to decode frame's meta")
-			}
-			
 			//	pop frame
-			let Plane0Size : Int32 = Int32(Meta.Planes?.first?.DataSize ?? 0 )
-			let Plane0Buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: Int(Plane0Size))
-			
-			let PopMetaJsonBuffer = UnsafeMutablePointer<CChar>.allocate(capacity: JsonBufferSize)
-			//	init with terminator
-			PopMetaJsonBuffer[0] = 0
-			
-			
-			var PoppedFrameNumber = PopCameraDevice_PopNextFrame( instance, PopMetaJsonBuffer, Int32(JsonBufferSize), Plane0Buffer, Plane0Size, nil, 0, nil, 0)
-			PoppedFrameNumber = PoppedFrameNumber & 0x7fffffff
-			if ( PoppedFrameNumber != PeekFrameNumber )
+			let PopMetaJsonBufferCount = Int32(PopMetaJsonBuffer.count)
+			var PoppedPlane0Buffer = try PopMetaJsonBuffer.withUnsafeMutableBytes 
 			{
-				throw PopError("Popped different frame to peek")
+				(PopMetaJsonBuffer8:UnsafeMutablePointer<CChar>) in
+				//	init with terminator
+				PopMetaJsonBuffer8[0] = 0
+				
+				let Plane0Size : Int32 = Int32(Meta.Planes?.first?.DataSize ?? 0 )
+				var Plane0Buffer = Data(count: Int(Plane0Size))
+				var PoppedFrameNumber = Plane0Buffer.withUnsafeMutableBytes 
+				{
+					(Plane0Buffer8:UnsafeMutablePointer<UInt8>) in
+					var PoppedFrameNumber = PopCameraDevice_PopNextFrame( instance, PopMetaJsonBuffer8, PopMetaJsonBufferCount, Plane0Buffer8, Plane0Size, nil, 0, nil, 0)
+					let PoppedMeta = String(cString: PopMetaJsonBuffer8)
+					return PoppedFrameNumber
+				}
+
+				PoppedFrameNumber = PoppedFrameNumber & 0x7fffffff
+				if ( PoppedFrameNumber != PeekFrameNumber )
+				{
+					throw PopError("Popped different frame to peek")
+				}
+				
+				return Plane0Buffer
 			}
-			
-			//	gr: this is a copy, can we start with just Data?
-			let Plane0Data = Data(bytes:Plane0Buffer,count:Int(Plane0Size))
-			Plane0Buffer.deallocate()
-			
-			var frame = Frame(Meta: Meta, PixelData: Plane0Data, FrameNumber:PoppedFrameNumber)
+
+			let Plane0Data = PoppedPlane0Buffer
+			var frame = Frame(Meta: Meta, PixelData: Plane0Data, FrameNumber:PeekFrameNumber )
 			
 			return frame
 		}
