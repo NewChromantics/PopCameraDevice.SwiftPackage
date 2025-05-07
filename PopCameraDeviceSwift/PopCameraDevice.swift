@@ -320,7 +320,8 @@ public struct Frame
 			let destData = CVPixelBufferGetBaseAddress(pixelBuffer)
 			
 			let destDataSize = CVPixelBufferGetDataSize(pixelBuffer)
-			destData?.copyMemory(from: pixelBytes, byteCount: PixelData.count)
+			let copySize = min( destDataSize, PixelData.count )
+			destData?.copyMemory(from: pixelBytes, byteCount: copySize)
 			CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
 		}
 		return pixelBufferMaybe!
