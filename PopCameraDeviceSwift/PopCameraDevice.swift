@@ -5,6 +5,11 @@ import PopCameraDeviceCApi
 import VideoToolbox
 import Accelerate
 
+#if canImport(UIKit)	//	ios
+#else
+public typealias UIImage = NSImage
+#endif
+
 public struct PopError : LocalizedError
 {
 	let error: String
@@ -18,16 +23,25 @@ public struct PopError : LocalizedError
 	}
 }
 
-public func PixelBufferToSwiftImage(_ pixelBuffer:CVPixelBuffer) throws -> Image
+public func PixelBufferToNativeImage(_ pixelBuffer:CVPixelBuffer) throws -> UIImage
 {
 	let cg = try PixelBufferToCGImage(pixelBuffer)
 #if os(iOS)
 	let uiimage = UIImage(cgImage:cg)
-	return try Image(uiImage: uiimage )
 #else
 	//	zero = auto size
 	let uiimage = NSImage(cgImage:cg, size:.zero)
-	return try Image(nsImage: uiimage)
+#endif
+	return uiimage
+}
+
+public func PixelBufferToSwiftImage(_ pixelBuffer:CVPixelBuffer) throws -> Image
+{
+	let nativeImage = try PixelBufferToNativeImage(pixelBuffer)
+#if os(iOS)
+	return try Image(uiImage: nativeImage )
+#else
+	return try Image(nsImage: nativeImage)
 #endif
 }
 
@@ -265,6 +279,8 @@ public struct Frame
 	public var Meta : FrameMeta
 	public var PixelData : Data?
 	public var FrameNumber : Int32
+	public var width : Int { Int(Meta.Planes?.first?.Width ?? 0) }
+	public var height : Int { Int(Meta.Planes?.first?.Height ?? 0) }
 
 	/*
 	fileprivate extension CIImage {
@@ -281,7 +297,20 @@ public struct Frame
 		return try PixelBufferToSwiftImage(pixelBuffer)
 	}
 	
+	public func CreateNativeImage() throws -> UIImage
+	{
+		let pixelBuffer = try CreateCoreVideoPixelBuffer()
+		return try PixelBufferToNativeImage(pixelBuffer)
+	}
 	
+	public func CreateCGImage() throws -> CGImage
+	{
+		let pixelBuffer = try CreateCoreVideoPixelBuffer()
+		//	this causes a memmove - maybe there's faster straight-to-cgimage option
+		let cg = try PixelBufferToCGImage(pixelBuffer)
+		return cg
+	}
+
 	
 	public func CreateCoreVideoPixelBuffer(pool:CVPixelBufferPool?=nil,poolAttributes:NSDictionary?=nil) throws -> CVPixelBuffer
 	{
