@@ -305,12 +305,76 @@ public struct Frame
 	
 	public func CreateCGImage() throws -> CGImage
 	{
+		do
+		{
+			return try CreateCGImageDirect()
+		}
+		catch
+		{
+			print(error.localizedDescription)
+		}
+		
 		let pixelBuffer = try CreateCoreVideoPixelBuffer()
 		//	this causes a memmove - maybe there's faster straight-to-cgimage option
 		let cg = try PixelBufferToCGImage(pixelBuffer)
 		return cg
 	}
 
+	func CreateCGImageDirect() throws -> CGImage
+	{
+		guard let PixelData else
+		{
+			throw PopError("Missing pixels")
+		}
+		
+		if Meta.Planes?[0].Channels != 4
+		{
+			throw PopError("todo: non rgba handling")
+		}
+		let asRgba = try {
+			let format = Meta.Planes?[0].Format
+			if format == "RGBA"
+			{
+				return true
+			}
+			else if format == "ARGB"
+			{
+				return false
+			}
+			throw PopError("Cannot use format \(format ?? "") for CGImage")
+		}()
+		let alphaMode = asRgba ? CGImageAlphaInfo.premultipliedLast : CGImageAlphaInfo.premultipliedFirst
+		let rgbColorSpace = CGColorSpaceCreateDeviceRGB()
+		let bitmapInfo = CGBitmapInfo(rawValue:alphaMode.rawValue )
+		let bitsPerComponent = 8
+		let bytesPerPixel = 4
+		let bitsPerPixel = bitsPerComponent * bytesPerPixel
+		
+		let pixelDataNs = PixelData as NSData
+		guard let providerRef = CGDataProvider(data: pixelDataNs) else 
+		{
+			throw PopError("Failed to allocate CGImage data")
+		}
+		
+		let cgim = CGImage(
+			width: width,
+			height: height,
+			bitsPerComponent: bitsPerComponent,
+			bitsPerPixel: bitsPerPixel,
+			bytesPerRow: width * bytesPerPixel,
+			space: rgbColorSpace,
+			bitmapInfo: bitmapInfo,
+			provider: providerRef,
+			decode: nil,
+			shouldInterpolate: false,
+			intent: .defaultIntent
+		)
+		guard let cgim else 
+		{
+			throw PopError("Failed to create CGImage data")
+		}
+		return cgim
+	}
 	
 	public func CreateCoreVideoPixelBuffer(pool:CVPixelBufferPool?=nil,poolAttributes:NSDictionary?=nil) throws -> CVPixelBuffer
 	{
